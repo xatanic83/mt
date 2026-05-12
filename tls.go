@@ -57,7 +57,7 @@ var stats statsType
 
 func buildHTTP3Client() *http.Client {
 	return &http.Client{
-		Transport: &http3.RoundTripper{
+		Transport: &http3.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify:       true,
 				CurvePreferences:         []tls.CurveID{tls.X25519, tls.CurveP256},
@@ -65,7 +65,7 @@ func buildHTTP3Client() *http.Client {
 				MinVersion:               tls.VersionTLS12,
 				MaxVersion:               tls.VersionTLS13,
 			},
-			QuicConfig: nil,
+			QUICConfig: nil,
 		},
 		Timeout: 10 * time.Second,
 	}
