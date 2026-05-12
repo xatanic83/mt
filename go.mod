@@ -1,6 +1,6 @@
 module meji
 
-go 1.25.0
+go 1.21.13
 
 require (
 	github.com/quic-go/quic-go v0.59.0
