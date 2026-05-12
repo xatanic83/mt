@@ -1,19 +1,16 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/quic-go/quic-go/http3"
-	"golang.org/x/net/http2"
+	"github.com/valyala/fasthttp"
 )
 
 var (
@@ -49,55 +46,39 @@ type statsType struct {
 	total   int64
 	success int64
 	failed  int64
-	http3   int64
-	http2   int64
 }
 
 var stats statsType
 
-func buildHTTP3Client() *http.Client {
-	return &http.Client{
-		Transport: &http3.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify:       true,
-				CurvePreferences:         []tls.CurveID{tls.X25519, tls.CurveP256},
-				PreferServerCipherSuites: true,
-				MinVersion:               tls.VersionTLS12,
-				MaxVersion:               tls.VersionTLS13,
+func buildClient() *fasthttp.Client {
+	return &fasthttp.Client{
+		TLSConfig: &tls.Config{
+			InsecureSkipVerify:       true,
+			CurvePreferences:         []tls.CurveID{tls.X25519, tls.CurveP256},
+			PreferServerCipherSuites: true,
+			MinVersion:               tls.VersionTLS12,
+			MaxVersion:               tls.VersionTLS13,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
 			},
-			QUICConfig: nil,
 		},
+		MaxConnsPerHost:     10000,
+		MaxIdleConnDuration: 30 * time.Second,
+		ReadTimeout:         10 * time.Second,
+		WriteTimeout:        10 * time.Second,
+		DisableKeepAlives:   false,
 	}
 }
 
-func buildHTTP2Client() *http.Client {
-	return &http.Client{
-		Transport: &http2.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify:       true,
-				CurvePreferences:         []tls.CurveID{tls.X25519, tls.CurveP256},
-				PreferServerCipherSuites: true,
-				MinVersion:               tls.VersionTLS12,
-				MaxVersion:               tls.VersionTLS13,
-				CipherSuites: []uint16{
-					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-				},
-			},
-		},
-	}
-}
-
-func setHeaders(req *http.Request, isMobile bool) {
+func setHeaders(req *fasthttp.Request, isMobile bool) {
 	rng := rand.Intn
 
-	var ua string
-	var secChUa string
-	var secChUaPlatform string
+	var ua, secChUa, secChUaPlatform string
 
 	if isMobile {
 		ua = userAgentsMobile[rng(len(userAgentsMobile))]
@@ -130,24 +111,22 @@ func setHeaders(req *http.Request, isMobile bool) {
 	req.Header.Set("Dnt", "1")
 }
 
-func makeRequest(client *http.Client, target string, isMobile bool) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func makeRequest(client *fasthttp.Client, target string, isMobile bool) bool {
+	req := fasthttp.AcquireRequest()
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(resp)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return false
-	}
-
+	req.SetRequestURI(target)
+	req.Header.SetMethod(fasthttp.MethodGet)
 	setHeaders(req, isMobile)
 
-	resp, err := client.Do(req)
+	err := client.DoTimeout(req, resp, 10*time.Second)
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
 
-	return resp.StatusCode >= 200 && resp.StatusCode < 500
+	return resp.StatusCode() >= 200 && resp.StatusCode() < 500
 }
 
 func main() {
@@ -169,15 +148,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	http3Client := buildHTTP3Client()
-	http2Client := buildHTTP2Client()
+	client := buildClient()
 
 	interval := time.Second / time.Duration(rate)
 	ticker := time.NewTicker(interval)
 	deadline := time.After(time.Duration(duration) * time.Second)
 	var wg sync.WaitGroup
 
-	fmt.Printf("Starting HTTP/3 + HTTP/2 requests to %s\n", target)
+	fmt.Printf("Starting fasthttp requests to %s\n", target)
 	fmt.Printf("Duration: %ds | Rate: %d req/s\n\n", duration, rate)
 
 	start := time.Now()
@@ -194,22 +172,9 @@ loop:
 				defer wg.Done()
 
 				isMobile := rand.Intn(100) < 40
-				useHTTP3 := rand.Intn(100) < 90
-
-				var client *http.Client
-				if useHTTP3 {
-					client = http3Client
-				} else {
-					client = http2Client
-				}
 
 				if makeRequest(client, target, isMobile) {
 					atomic.AddInt64(&stats.success, 1)
-					if useHTTP3 {
-						atomic.AddInt64(&stats.http3, 1)
-					} else {
-						atomic.AddInt64(&stats.http2, 1)
-					}
 				} else {
 					atomic.AddInt64(&stats.failed, 1)
 				}
@@ -226,8 +191,6 @@ loop:
 	fmt.Printf("Duration    : %.2fs\n", elapsed)
 	fmt.Printf("Total Req   : %d\n", stats.total)
 	fmt.Printf("Success     : %d\n", stats.success)
-	fmt.Printf("  HTTP/3    : %d\n", stats.http3)
-	fmt.Printf("  HTTP/2    : %d\n", stats.http2)
 	fmt.Printf("Failed      : %d\n", stats.failed)
 	fmt.Printf("Avg Rate    : %.2f req/s\n", float64(stats.total)/elapsed)
 	fmt.Println("=============================")
