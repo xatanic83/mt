@@ -67,7 +67,6 @@ func buildHTTP3Client() *http.Client {
 			},
 			QUICConfig: nil,
 		},
-		Timeout: 10 * time.Second,
 	}
 }
 
@@ -90,7 +89,6 @@ func buildHTTP2Client() *http.Client {
 				},
 			},
 		},
-		Timeout: 10 * time.Second,
 	}
 }
 
@@ -133,7 +131,10 @@ func setHeaders(req *http.Request, isMobile bool) {
 }
 
 func makeRequest(client *http.Client, target string, isMobile bool) bool {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, target, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return false
 	}
@@ -146,10 +147,7 @@ func makeRequest(client *http.Client, target string, isMobile bool) bool {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
-		return true
-	}
-	return false
+	return resp.StatusCode >= 200 && resp.StatusCode < 500
 }
 
 func main() {
