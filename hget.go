@@ -14,33 +14,13 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var (
-	userAgentsDesktop = []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-	}
+const (
+	uaDesktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+	uaMobile  = "Mozilla/5.0 (Linux; Android 15; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36"
 
-	userAgentsMobile = []string{
-		"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-		"Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0.0.0 Mobile/15E148 Safari/604.1",
-		"Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-	}
-
-	secChUaDesktop = []string{
-		`"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"`,
-		`"Chromium";v="123", "Google Chrome";v="123", "Not-A.Brand";v="99"`,
-	}
-
-	secChUaMobile = []string{
-		`"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"`,
-		`"Chromium";v="123", "Google Chrome";v="123", "Not-A.Brand";v="99"`,
-	}
-
-	secChUaPlatformsDesktop = []string{`"Windows"`, `"macOS"`, `"Linux"`}
-	secChUaPlatformsMobile  = []string{`"Android"`}
+	secChUaVal      = `"Chromium";v="136", "Google Chrome";v="136", "Not-A.Brand";v="99"`
+	platformDesktop = `"Windows"`
+	platformMobile  = `"Android"`
 )
 
 type statsType struct {
@@ -140,18 +120,16 @@ func buildClient() *fasthttp.Client {
 }
 
 func setHeaders(req *fasthttp.Request, isMobile bool) {
-	rng := rand.Intn
-
-	var ua, secChUa, secChUaPlatform string
+	var ua, platform, mobile string
 
 	if isMobile {
-		ua = userAgentsMobile[rng(len(userAgentsMobile))]
-		secChUa = secChUaMobile[rng(len(secChUaMobile))]
-		secChUaPlatform = secChUaPlatformsMobile[rng(len(secChUaPlatformsMobile))]
+		ua = uaMobile
+		platform = platformMobile
+		mobile = "?1"
 	} else {
-		ua = userAgentsDesktop[rng(len(userAgentsDesktop))]
-		secChUa = secChUaDesktop[rng(len(secChUaDesktop))]
-		secChUaPlatform = secChUaPlatformsDesktop[rng(len(secChUaPlatformsDesktop))]
+		ua = uaDesktop
+		platform = platformDesktop
+		mobile = "?0"
 	}
 
 	req.Header.Set("User-Agent", ua)
@@ -159,14 +137,9 @@ func setHeaders(req *fasthttp.Request, isMobile bool) {
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9,id;q=0.8")
 	req.Header.Set("Cache-Control", "max-age=0")
-	req.Header.Set("Sec-Ch-Ua", secChUa)
-	req.Header.Set("Sec-Ch-Ua-Mobile", func() string {
-		if isMobile {
-			return "?1"
-		}
-		return "?0"
-	}())
-	req.Header.Set("Sec-Ch-Ua-Platform", secChUaPlatform)
+	req.Header.Set("Sec-Ch-Ua", secChUaVal)
+	req.Header.Set("Sec-Ch-Ua-Mobile", mobile)
+	req.Header.Set("Sec-Ch-Ua-Platform", platform)
 	req.Header.Set("Sec-Fetch-Dest", "document")
 	req.Header.Set("Sec-Fetch-Mode", "navigate")
 	req.Header.Set("Sec-Fetch-Site", "none")
