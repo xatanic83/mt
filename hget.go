@@ -95,11 +95,22 @@ func randomMejiQuery() string {
 }
 
 // appendMejiQuery tambah random meji query ke URL,
-// handle kalau URL udah ada '?' atau belum
+// handle kalau URL udah ada '?' atau belum.
+// Kalau URL tanpa path (misal https://example.com),
+// otomatis ditambah '/' supaya jadi https://example.com/?meji=...
 func appendMejiQuery(rawURL string) string {
 	q := randomMejiQuery()
 	if strings.Contains(rawURL, "?") {
 		return rawURL + "&" + q
+	}
+	// Cek apakah ada path setelah scheme://host
+	// https://example.com → tidak ada path → tambah /
+	schemeEnd := strings.Index(rawURL, "://")
+	if schemeEnd >= 0 {
+		afterScheme := rawURL[schemeEnd+3:]
+		if !strings.Contains(afterScheme, "/") {
+			return rawURL + "/?" + q
+		}
 	}
 	return rawURL + "?" + q
 }
